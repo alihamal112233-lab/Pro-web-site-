@@ -1,1 +1,261 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>এডমিন প্যানেল - DB Clouds</title>
+    <style>
+        :root {
+            --bg-deep: #050505; --bg-card: #141414; --bg-input: #1a1a1a;
+            --border-color: #252525; --primary-light: #00897B; --accent: #E11D48;
+            --text-primary: #ffffff; --text-secondary: #e0e0e0; --text-muted: #909090;
+            --green: #4CAF50; --orange: #FF9800;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-deep); color: var(--text-primary); min-height: 100vh; }
 
+        .admin-header {
+            background: var(--bg-card); padding: 14px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .admin-header h1 { font-size: 18px; font-weight: 800; color: var(--primary-light); }
+        .header-links a { color: var(--text-muted); text-decoration: none; font-size: 13px; margin-left: 16px; transition: color 0.2s; }
+        .header-links a:hover { color: var(--text-primary); }
+        .header-links a.logout { color: var(--accent); }
+
+        .admin-main { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; }
+        .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .stat-value { font-size: 24px; font-weight: 800; }
+        .stat-value.teal { color: var(--primary-light); }
+        .stat-value.red { color: var(--accent); }
+        .stat-value.green { color: var(--green); }
+        .stat-value.orange { color: var(--orange); }
+
+        .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); overflow-x: auto; }
+        .tab-btn {
+            padding: 10px 20px; background: none; border: none;
+            color: var(--text-muted); font-size: 14px; font-weight: 600;
+            cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .tab-btn:hover { color: var(--text-secondary); }
+        .tab-btn.active { color: var(--primary-light); border-bottom-color: var(--primary-light); }
+
+        .data-table-wrapper { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; overflow-x: auto; }
+        .table-header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .table-header span { font-size: 14px; font-weight: 700; color: var(--text-secondary); }
+        .refresh-btn { padding: 6px 14px; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-secondary); border-radius: 6px; font-size: 12px; cursor: pointer; }
+        
+        .data-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        .data-table th { padding: 10px 14px; text-align: left; font-size: 11px; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.3); }
+        .data-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+        
+        .amount-cell { font-weight: 700; color: var(--green); }
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 10px 24px; border-radius: 6px; font-size: 13px; font-weight: 600; color: white; background: var(--primary-light); opacity: 0; pointer-events: none; transition: 0.3s; z-index: 9999; }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <header class="admin-header">
+        <h1>🛡️ এডমিন কন্ট্রোল প্যানেল</h1>
+        <div class="header-links">
+            <a href="/">হোম পেজ</a>
+            <a class="logout" href="#" onclick="doLogout()">লগআউট</a>
+        </div>
+    </header>
+
+    <main class="admin-main">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">পেন্ডিং রিচার্জ</div>
+                <div class="stat-value orange" id="statPending">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">মোট ইউজার</div>
+                <div class="stat-value teal" id="statUsers">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">মোট সার্চ</div>
+                <div class="stat-value green" id="statSearches">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">মোট আয়</div>
+                <div class="stat-value red" id="statIncome">0 ৳</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('users', this)">ইউজার তালিকা</button>
+            <button class="tab-btn" onclick="switchTab('recharges', this)">রিচার্জ রিকোয়েস্ট</button>
+        </div>
+
+        <!-- ইউজার তালিকা ট্যাব -->
+        <div class="tab-content active" id="users-tab">
+            <div class="data-table-wrapper">
+                <div class="table-header">
+                    <span>নিবন্ধিত সকল ইউজার</span>
+                    <button class="refresh-btn" onclick="loadUsers()">🔄 রিফ্রেশ</button>
+                </div>
+                <div id="usersBody">
+                    <div class="empty-state">লোড হচ্ছে...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- রিচার্জ রিকোয়েস্ট ট্যাব -->
+        <div class="tab-content" id="recharges-tab">
+            <div class="data-table-wrapper">
+                <div class="table-header">
+                    <span>পেন্ডিং রিচার্জ তালিকা</span>
+                    <button class="refresh-btn" onclick="loadRecharges()">🔄 রিফ্রেশ</button>
+                </div>
+                <div id="rechargesBody">
+                    <div class="empty-state">কোনো পেন্ডিং রিচার্জ নেই</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API = window.location.origin;
+        const TK = () => localStorage.getItem('token');
+
+        function switchTab(name, btn) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(name + '-tab').classList.add('active');
+            btn.classList.add('active');
+            if (name === 'users') loadUsers();
+            if (name === 'recharges') loadRecharges();
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2500);
+        }
+
+        function doLogout() {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch(API + '/api/admin/stats', {
+                    headers: { 'Authorization': 'Bearer ' + TK() }
+                });
+                if (res.status === 403 || res.status === 401) {
+                    alert('আপনার এডমিন অনুমতি নেই! অনুগ্রহ করে এডমিন দিয়ে লগইন করুন।');
+                    window.location.href = '/login';
+                    return;
+                }
+                if (res.ok) {
+                    const d = await res.json();
+                    document.getElementById('statPending').textContent = d.pending_recharges;
+                    document.getElementById('statUsers').textContent = d.total_users;
+                    document.getElementById('statSearches').textContent = d.searches;
+                    document.getElementById('statIncome').textContent = d.income + ' ৳';
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        async function loadUsers() {
+            const body = document.getElementById('usersBody');
+            body.innerHTML = '<div class="empty-state">লোড হচ্ছে...</div>';
+            try {
+                const res = await fetch(API + '/api/admin/users', {
+                    headers: { 'Authorization': 'Bearer ' + TK() }
+                });
+                const data = await res.json();
+                if (res.ok && data.length > 0) {
+                    let h = '<table class="data-table"><thead><tr><th>ID</th><th>ইউজারনেম</th><th>UID</th><th>মোবাইল</th><th>ব্যালেন্স</th><th>রোল</th></tr></thead><tbody>';
+                    data.forEach(u => {
+                        h += `<tr>
+                            <td>${u.id}</td>
+                            <td><strong>${u.username}</strong></td>
+                            <td style="color:#E11D48;font-family:monospace;">${u.uid}</td>
+                            <td>${u.mobile || '-'}</td>
+                            <td class="amount-cell">${u.balance} ৳</td>
+                            <td>${u.role}</td>
+                        </tr>`;
+                    });
+                    h += '</tbody></table>';
+                    body.innerHTML = h;
+                } else {
+                    body.innerHTML = '<div class="empty-state">কোনো ইউজার পাওয়া যায়নি</div>';
+                }
+            } catch(e) {
+                body.innerHTML = '<div class="empty-state">লোড ব্যর্থ হয়েছে!</div>';
+            }
+        }
+
+        async function loadRecharges() {
+            const body = document.getElementById('rechargesBody');
+            body.innerHTML = '<div class="empty-state">লোড হচ্ছে...</div>';
+            try {
+                const res = await fetch(API + '/api/admin/pending-recharges', {
+                    headers: { 'Authorization': 'Bearer ' + TK() }
+                });
+                const data = await res.json();
+                if (res.ok && data.length > 0) {
+                    let h = '<table class="data-table"><thead><tr><th>ইউজার</th><th>পরিমাণ</th><th>মেথড</th><th>TrxID</th><th>অ্যাকশন</th></tr></thead><tbody>';
+                    data.forEach(r => {
+                        h += `<tr>
+                            <td>${r.username}</td>
+                            <td class="amount-cell">${r.amount} ৳</td>
+                            <td>${r.method}</td>
+                            <td>${r.transaction_id}</td>
+                            <td><button onclick="approveRecharge(${r.id})" style="padding:4px 10px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;">✅ অ্যাপ্রুভ</button></td>
+                        </tr>`;
+                    });
+                    h += '</tbody></table>';
+                    body.innerHTML = h;
+                } else {
+                    body.innerHTML = '<div class="empty-state">কোনো পেন্ডিং রিকোয়েস্ট নেই</div>';
+                }
+            } catch(e) {
+                body.innerHTML = '<div class="empty-state">লোড ব্যর্থ হয়েছে!</div>';
+            }
+        }
+
+        async function approveRecharge(id) {
+            try {
+                const res = await fetch(API + '/api/admin/approve/' + id, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + TK() }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showToast(data.message);
+                    loadStats();
+                    loadRecharges();
+                } else {
+                    showToast(data.detail || 'ব্যর্থ হয়েছে');
+                }
+            } catch(e) {
+                showToast('সার্ভার সমস্যা');
+            }
+        }
+
+        window.onload = function() {
+            loadStats();
+            loadUsers();
+        };
+    </script>
+</body>
+</html>
