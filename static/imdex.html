@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>DB Clouds Store - Data Search</title>
+    <style>
+        :root {
+            --bg-deep: #050505;
+            --bg-header: #0d0d0d;
+            --bg-footer: #0a0a0a;
+            --bg-card: #141414;
+            --bg-input: #1a1a1a;
+            --border-color: #252525;
+            --accent: #E11D48;
+            --primary: #004D40;
+            --primary-light: #00897B;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --text-muted: #5a5a5a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-btn {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: opacity 0.2s, transform 0.15s;
+            display: inline-block;
+        }
+        .header-btn:hover { opacity: 0.85; transform: scale(1.03); }
+        .header-btn-login { background: var(--primary-light); color: #fff; }
+        .header-btn-register { background: var(--accent); color: #fff; }
+        
+        .app-header {
+            background: var(--bg-header);
+            padding: 14px 20px;
+            border-bottom: 1px solid #1a1a1a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .header-auth {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .app-header h1 {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            color: var(--text-primary);
+            text-transform: uppercase;
+        }
+        .app-header h1 .brand-accent { color: var(--accent); }
+
+        .main-content {
+            flex: 1;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        .app-header h5 {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #ff3b30, #ffcc00, #00c853, #2196f3, #e91e63, #ff3b30);
+            background-size: 300% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: colorWave 5s ease-in-out infinite;
+        }
+
+        @keyframes colorWave {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .form-container {
+            background: var(--bg-card);
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            overflow-x: auto;
+        }
+        .form-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .form-group select,
+        .form-group input[type="text"] {
+            width: 140px;
+            padding: 9px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 13px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            outline: none;
+        }
+        .btn-row { display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
+        .btn {
+            padding: 9px 25px;
+            min-width: 90px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-search { background: var(--primary-light); color: white; }
+        .btn-clear { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+
+        @media (max-width: 860px) {
+            .form-container { flex-wrap: wrap; padding: 12px; gap: 10px; }
+            .form-group { width: calc(50% - 5px); }
+            .form-group select, .form-group input[type="text"] { width: 100%; }
+            .btn-row { width: 100%; margin-left: 0; display: flex; gap: 10px; }
+            .btn-row .btn { flex: 1; }
+        }
+
+        .result-panel {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        .result-header {
+            background: var(--bg-header);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .result-header span { font-size: 13px; font-weight: 700; color: var(--accent); }
+        .result-body { padding: 12px; max-height: 72vh; overflow-y: auto; }
+        
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .voter-card {
+            background: var(--bg-card);
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        .card-header {
+            background: var(--primary);
+            color: white;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .card-body { padding: 10px 12px; }
+        .info-label { font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+        .info-value { font-size: 12px; color: var(--text-primary); margin-bottom: 6px; }
+        .info-value.name-highlight { color: var(--primary-light); font-weight: 700; font-size: 13px; }
+        
+        .empty-state { text-align: center; padding: 100px 20px; color: var(--text-muted); font-size: 14px; }
+        .empty-state .empty-icon { font-size: 44px; margin-bottom: 12px; }
+
+        .app-footer {
+            background: var(--bg-footer);
+            padding: 16px 20px;
+            text-align: center;
+            border-top: 1px solid #1a1a1a;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translateX(-50%) translateY(-50%);
+            background: var(--primary-light);
+            color: white;
+            padding: 11px 28px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: 0.3s;
+        }
+        .toast.show { opacity: 1; }
+
+        .user-avatar {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 700;
+            cursor: pointer;
+        }
+        .sidebar-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 200;
+            opacity: 0; pointer-events: none;
+            transition: 0.3s;
+        }
+        .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+        .sidebar-panel {
+            position: fixed; top: 0; right: -280px;
+            width: 280px; height: 100%;
+            background: #141414;
+            border-left: 1px solid #252525;
+            z-index: 201;
+            transition: right 0.3s ease;
+            display: flex; flex-direction: column;
+            padding: 24px 20px;
+        }
+        .sidebar-panel.open { right: 0; }
+        .sidebar-close {
+            align-self: flex-end;
+            background: none; border: none;
+            color: var(--text-muted); font-size: 22px;
+            cursor: pointer;
+        }
+        .sidebar-avatar {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700;
+            margin: 16px auto 8px;
+        }
+        .sidebar-name { text-align: center; font-size: 15px; font-weight: 600; }
+        .sidebar-balance {
+            text-align: center; font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 24px; padding-bottom: 16px;
+            border-bottom: 1px solid #252525;
+        }
+        .sidebar-balance strong { color: var(--primary-light); }
+        .sidebar-menu { list-style: none; }
+        .sidebar-menu li { margin-bottom: 6px; }
+        .sidebar-menu a, .sidebar-menu button {
+            display: block; width: 100%;
+            padding: 10px 14px;
+            background: none; border: none;
+            color: var(--text-secondary);
+            font-size: 13px; text-align: left;
+            text-decoration: none; cursor: pointer;
+            border-radius: 8px;
+        }
+        .sidebar-menu a:hover, .sidebar-menu button:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+        }
+        .sidebar-menu .logout-btn { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header class="app-header">
+        <h1>DB <span class="brand-accent">Clouds</span> Store</h1>
+        <h5>*** প্রতি সার্চ ৩ টাকা। <span class="brand-accent">রেজিস্ট্রেশনে ১৫ টাকা</span> ফ্রি ***</h5>
+        <div class="header-auth">
+            <span id="adminLink" style="display:none;margin-right:14px;">
+                <a href="/admin" style="color:#00897B;text-decoration:none;font-size:14px;font-weight:700;">🛡️ Admin</a> |
+            </span>
+            <span id="authLinks" style="display: flex; gap: 8px;">
+                <a class="header-btn header-btn-login" href="/login">লগইন</a>
+                <a class="header-btn header-btn-register" href="/register">রেজিস্টার</a>
+            </span>
+            <span id="userLinks" style="display: none;">
+                <div class="user-avatar" id="userAvatar" onclick="toggleSidebar()">U</div>
+            </span>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="form-container">
+            <div class="form-group">
+                <label>জেলা</label>
+                <select id="district" onchange="loadUpazilas()"><option value="">-- জেলা --</option></select>
+            </div>
+            <div class="form-group">
+                <label>উপজেলা</label>
+                <select id="upazila"><option value="">-- উপজেলা --</option></select>
+            </div>
+            <div class="form-group">
+                <label>নাম</label>
+                <input id="voterName" placeholder="নামের অংশ" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>পিতার নাম</label>
+                <input id="fatherName" placeholder="পিতার নাম" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>মাতার নাম</label>
+                <input id="motherName" placeholder="মাতার নাম" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>জন্ম তারিখ</label>
+                <input id="dob" placeholder="বছর বা তারিখ" type="text"/>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-clear" onclick="clearForm()">ক্লিয়ার</button>
+                <button class="btn btn-search" id="searchBtn" onclick="searchVoter()">সার্চ</button>
+            </div>
+        </div>
+
+        <div class="result-panel">
+            <div class="result-header">
+                <span>অনুসন্ধানের ফলাফল</span>
+                <span id="resultCount">0 জন পাওয়া গেছে</span>
+            </div>
+            <div class="result-body" id="resultBody">
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    কোন ডাটা পাওয়া যায়নি
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+    <div class="sidebar-panel" id="sidebarPanel">
+        <button class="sidebar-close" onclick="closeSidebar()">×</button>
+        <div class="sidebar-avatar" id="sidebarAvatar">U</div>
+        <div class="sidebar-name" id="sidebarName">-</div>
+        <div id="sidebarUid" onclick="copyUid()" style="text-align:center; font-size:11px; color:#E11D48; font-family:monospace; margin-bottom:12px; cursor:pointer;" title="কপি করুন">-</div>
+        <div class="sidebar-balance">ব্যালেন্স: <strong><span id="sidebarBal">0</span> ৳</strong></div>
+        <ul class="sidebar-menu">
+            <li><button onclick="showToast('রিচার্জ রিকোয়েস্ট পাঠানোর জন্য এডমিনের সাথে যোগাযোগ করুন')">💰 রিচার্জ রিকোয়েস্ট</button></li>
+            <li><button class="logout-btn" onclick="logout()">🚪 লগআউট</button></li>
+        </ul>
+    </div>
+
+    <footer class="app-footer">
+        © 2026 DB Clouds Store — All Rights Reserved
+    </footer>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/static/js/script_1_2_home.js"></script>
+</body>
+</html>
