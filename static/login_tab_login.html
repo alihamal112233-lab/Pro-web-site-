@@ -1,1 +1,202 @@
 
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>লগইন ও রেজিস্ট্রেশন - DB Clouds</title>
+    <style>
+        :root {
+            --bg-deep: #050505;
+            --bg-card: #141414;
+            --bg-input: #1a1a1a;
+            --border-color: #252525;
+            --primary-light: #00897B;
+            --accent: #E11D48;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --text-muted: #5a5a5a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 30px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 420px;
+            margin: 20px;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: var(--primary-light);
+            font-size: 20px;
+        }
+
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .tab-btn.active {
+            color: var(--primary-light);
+            border-bottom: 2px solid var(--primary-light);
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: var(--primary-light);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 11px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            background: var(--primary-light);
+            color: white;
+            margin-top: 10px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .msg {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--accent);
+            min-height: 18px;
+        }
+
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 16px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .step { display: none; }
+        .step.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="auth-box">
+        <h2>DB Clouds Store</h2>
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('login', this)">লগইন</button>
+            <button class="tab-btn" onclick="switchTab('register', this)">রেজিস্টার</button>
+        </div>
+
+        <!-- লগইন ট্যাব -->
+        <div class="tab-content active" id="login-tab">
+            <div class="form-group">
+                <label>ইউজারনেম</label>
+                <input id="loginUser" placeholder="আপনার ইউজারনেম" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>পাসওয়ার্ড</label>
+                <input id="loginPass" placeholder="পাসওয়ার্ড লিখুন" type="password"/>
+            </div>
+            <button class="btn" id="loginBtn" onclick="handleLogin()">লগইন করুন</button>
+            <div class="msg" id="loginMsg"></div>
+        </div>
+
+        <!-- রেজিস্ট্রেশন ট্যাব -->
+        <div class="tab-content" id="register-tab">
+            <div class="form-group">
+                <label>ইউজারনেম</label>
+                <input id="regUsername" placeholder="নতুন ইউজারনেম দিন" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>মোবাইল নম্বর</label>
+                <input id="regMobile" placeholder="017XXXXXXXX" type="text"/>
+            </div>
+            <div class="form-group">
+                <label>ইমেইল (ঐচ্ছিক)</label>
+                <input id="regEmail" placeholder="example@mail.com" type="email"/>
+            </div>
+            <div class="form-group">
+                <label>জেলা</label>
+                <select id="regDistrict"><option value="">-- জেলা সিলেক্ট করুন --</option></select>
+            </div>
+            <div class="form-group">
+                <label>উপজেলা</label>
+                <select id="regUpazila"><option value="">-- উপজেলা সিলেক্ট করুন --</option></select>
+            </div>
+            <div class="form-group">
+                <label>পাসওয়ার্ড</label>
+                <input id="regPass" placeholder="গোপন পাসওয়ার্ড দিন" type="password"/>
+            </div>
+            <button class="btn" id="regBtn" onclick="handleFinalRegister()">নিশ্চিত রেজিস্ট্রেশন করুন</button>
+            <div class="msg" id="regMsg"></div>
+        </div>
+
+        <a class="back-link" href="/">← হোম পেজে ফিরে যান</a>
+    </div>
+
+    <script src="/static/js/script_3_1_auth.js"></script>
+</body>
+</html>
