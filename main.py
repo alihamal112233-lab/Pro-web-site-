@@ -1,16 +1,18 @@
+import csv
 import hashlib
+import io
 import os
 import secrets
 import sqlite3
 import time
 from typing import Optional
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-app = FastAPI(title="Web Portal & Management System")
+app = FastAPI(title="Advanced Web Portal & Management System")
 
 # CORS এনাবল করা
 app.add_middleware(
@@ -23,11 +25,11 @@ app.add_middleware(
 
 DB_FILE = "app_database.db"
 
-# --- ডাটাবেস ইনিশিয়ালাইজেশন ---
+# --- ডাটাবেস ইনিশিয়ালাইজেশন ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
+
     # ১. ইউজার টেবিল
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -60,7 +62,7 @@ def init_db():
         )
     ''')
 
-    # ৩. সার্চ লগ টেবিল
+    # ৩. সার্চ ও ট্রানজ্যাকশন লগ টেবিল
     c.execute('''
         CREATE TABLE IF NOT EXISTS search_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +77,7 @@ def init_db():
         )
     ''')
 
-    # ৪. নমুনা/জেনেরিক সার্চ ডাটাবেস
+    # ৪. নমুনা সার্চ ডাটাবেস (জেনেরিক ক্যাটালগ)
     c.execute('''
         CREATE TABLE IF NOT EXISTS sample_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +91,7 @@ def init_db():
         )
     ''')
 
-    # ডিফল্ট অ্যাডমিন একাউন্ট তৈরি (যদি না থাকে)
+    # ডিফল্ট অ্যাডমিন একাউন্ট (admin / admin123)
     c.execute("SELECT * FROM users WHERE username='admin'")
     if not c.fetchone():
         admin_pass = hashlib.sha256("admin123".encode()).hexdigest()
@@ -104,7 +106,10 @@ def init_db():
         sample_data = [
             ("ঢাকা", "ধানমন্ডি", "10293847", "আব্দুর রহিম", "করিম উদ্দিন", "আমেনা বেগম", "1992-05-10"),
             ("ঢাকা", "গুলশান", "58493021", "সাকিব হাসান", "রফিকুল ইসলাম", "সালমা খাতুন", "1995-11-20"),
-            ("চট্টগ্রাম", "পটিয়া", "39482019", "মোহাম্মদ আলী", "হাসান আলী", "নুরজাহান বেগম", "1988-02-15")
+            ("চট্টগ্রাম", "পটিয়া", "39482019", "মোহাম্মদ আলী", "হাসান আলী", "নুরজাহান বেগম", "1988-02-15"),
+            ("টাঙ্গাইল", "মধুপুর", "84920194", "মোঃ রাসেল আহমেদ", "আব্দুল খালেক", "মোছাঃ ফাতেমা", "1990-08-14"),
+            ("পটুয়াখালী", "বাউফল", "67482910", "কামরুল ইসলাম", "মোস্তফা কামাল", "রাহেলা বেগম", "1996-03-25"),
+            ("নওগাঁ", "পত্নীতলা", "48392019", "আরিফুল হক", "মজিবুর রহমান", "জাহানারা বেগম", "1994-12-05")
         ]
         c.executemany('''
             INSERT INTO sample_records (district, upazila, voter_no, name, father_name, mother_name, dob)
@@ -130,15 +135,11 @@ def serve_login():
 
 @app.get("/register")
 def serve_register():
-    return FileResponse("static/login_tab_register.html") if os.path.exists("static/login_tab_register.html") else {"msg": "register.html not found"}
+    return FileResponse("static/login_tab_login.html") if os.path.exists("static/login_tab_login.html") else {"msg": "register.html not found"}
 
 @app.get("/admin")
 def serve_admin():
     return FileResponse("static/admin.html") if os.path.exists("static/admin.html") else {"msg": "admin.html not found"}
-
-@app.get("/recharge.html")
-def serve_recharge():
-    return FileResponse("static/recharge.html") if os.path.exists("static/recharge.html") else {"msg": "recharge.html not found"}
 
 
 # --- Pydantic Data Models ---
@@ -167,6 +168,17 @@ class RechargeModel(BaseModel):
     method: str
     transaction_id: str
 
+class BalanceUpdateModel(BaseModel):
+    amount: float
+
+class EditUserModel(BaseModel):
+    username: str
+    email: Optional[str] = ""
+    password: Optional[str] = None
+    balance: Optional[float] = None
+    role: Optional[str] = "user"
+    is_active: Optional[bool] = True
+
 
 # --- ইউজার অথেনটিকেশন হেল্পার ---
 def get_user_from_token(token: str):
@@ -183,7 +195,10 @@ def get_user_from_token(token: str):
     return None
 
 
-# --- ১. অথেনটিকেশন APIs ---
+# ==========================================
+# ১. ইউজার অথেনটিকেশন ও প্রোফাইল APIs
+# ==========================================
+
 @app.post("/api/auth/register")
 def register_user(data: RegisterModel):
     conn = sqlite3.connect(DB_FILE)
@@ -192,14 +207,15 @@ def register_user(data: RegisterModel):
     if c.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="এই ইউজারনেম ইতোমধ্যে ব্যবহৃত হয়েছে!")
-    
+
     uid = f"UID-{secrets.token_hex(4).upper()}"
     p_hash = hashlib.sha256(data.password.encode()).hexdigest()
-    
+
+    # ১৫ টাকা ফ্রি বোনাস ব্যালেন্স
     c.execute('''
         INSERT INTO users (uid, username, email, mobile, district, upazila, password_hash, balance, role)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user')
-    ''', (uid, data.username, data.email, data.mobile, data.district, data.upazila, p_hash, 15.0)) # ১৫ টাকা ফ্রি বোনাস
+    ''', (uid, data.username, data.email, data.mobile, data.district, data.upazila, p_hash, 15.0))
     conn.commit()
     conn.close()
     return {"message": "রেজিস্ট্রেশন সফল হয়েছে!", "token": uid}
@@ -215,7 +231,7 @@ def login_user(data: LoginModel):
     if not res:
         raise HTTPException(status_code=401, detail="ভুল ইউজারনেম অথবা পাসওয়ার্ড!")
     if res[2] == 0:
-        raise HTTPException(status_code=403, detail="আপনার অ্যাকাউন্টটি ব্লক করা হয়েছে!")
+        raise HTTPException(status_code=403, detail="আপনার অ্যাকাউন্টটি সাময়িকভাবে বন্ধ করা হয়েছে!")
     return {"message": "লগইন সফল!", "token": res[0], "role": res[1]}
 
 @app.get("/api/user/me")
@@ -225,14 +241,37 @@ def get_current_user(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="অননুমোদিত অ্যাক্সেস!")
     return user
 
+@app.get("/api/user/history")
+def get_user_history(authorization: Optional[str] = Header(None)):
+    user = get_user_from_token(authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="লগইন করুন!")
 
-# --- ২. ব্যালেন্স রিচার্জ API ---
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        SELECT district, upazila, fee_charged, balance_after, created_at
+        FROM search_logs WHERE user_id=? ORDER BY id DESC LIMIT 20
+    ''', (user["id"],))
+    logs = c.fetchall()
+    conn.close()
+
+    return [{"district": l[0], "upazila": l[1], "fee": l[2], "balance": l[3], "time": l[4]} for l in logs]
+
+
+# ==========================================
+# ২. ব্যালেন্স রিচার্জ ও সার্চ ইঞ্জিন APIs
+# ==========================================
+
 @app.post("/api/recharge/request")
 def request_recharge(data: RechargeModel, authorization: Optional[str] = Header(None)):
     user = get_user_from_token(authorization)
     if not user:
         raise HTTPException(status_code=401, detail="লগইন করুন!")
-    
+
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="সঠিক পরিমাণ দিন!")
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
@@ -241,10 +280,8 @@ def request_recharge(data: RechargeModel, authorization: Optional[str] = Header(
     ''', (user["id"], user["username"], data.amount, data.method, data.transaction_id))
     conn.commit()
     conn.close()
-    return {"message": "রিচার্জ রিকোয়েস্ট জমা হয়েছে। অ্যাডমিন অ্যাপ্রুভ করলে ব্যালেন্স যোগ হবে।"}
+    return {"message": "রিচার্জ রিকোয়েস্ট জমা হয়েছে। অ্যাডমিন ভেরিফাই করলে ব্যালেন্স যোগ হবে।"}
 
-
-# --- ৩. সার্চ ইঞ্জিন ও ব্যালেন্স ডিডাকশন API ---
 @app.post("/api/search")
 def search_records(data: SearchModel, authorization: Optional[str] = Header(None)):
     user = get_user_from_token(authorization)
@@ -253,7 +290,7 @@ def search_records(data: SearchModel, authorization: Optional[str] = Header(None
 
     SEARCH_FEE = 3.0
     if user["balance"] < SEARCH_FEE:
-        raise HTTPException(status_code=402, detail="পর্যাপ্ত ব্যালেন্স নেই! দয়া করে রিচার্জ করুন।")
+        raise HTTPException(status_code=402, detail="পর্যাপ্ত ব্যালেন্স নেই! রিচার্জ করুন।")
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -262,13 +299,13 @@ def search_records(data: SearchModel, authorization: Optional[str] = Header(None
     new_bal = round(user["balance"] - SEARCH_FEE, 2)
     c.execute("UPDATE users SET balance=? WHERE id=?", (new_bal, user["id"]))
 
-    # লগ তৈরি
+    # লগ রেকর্ড তৈরি
     c.execute('''
         INSERT INTO search_logs (user_id, username, district, upazila, fee_charged, balance_before, balance_after)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (user["id"], user["username"], data.district, data.upazila, SEARCH_FEE, user["balance"], new_bal))
+    ''', (user["id"], user["username"], data.district or "-", data.upazila or "-", SEARCH_FEE, user["balance"], new_bal))
 
-    # সার্চ কুয়েরি
+    # সার্চ কুয়েরি চালানো
     query = "SELECT voter_no, name, father_name, mother_name, dob, district, upazila FROM sample_records WHERE 1=1"
     params = []
     if data.district:
@@ -304,7 +341,10 @@ def search_records(data: SearchModel, authorization: Optional[str] = Header(None
     return {"results": results, "new_balance": new_bal}
 
 
-# --- ৪. অ্যাডমিন প্যানেল APIs (`admin.html`-এর সাথে যুক্ত) ---
+# ==========================================
+# ৩. অ্যাডমিন প্যানেল কন্ট্রোল APIs (`admin.html`)
+# ==========================================
+
 @app.get("/api/admin/stats")
 def get_admin_stats(authorization: Optional[str] = Header(None)):
     user = get_user_from_token(authorization)
@@ -334,7 +374,7 @@ def get_pending_recharges(authorization: Optional[str] = Header(None)):
     user = get_user_from_token(authorization)
     if not user or user["role"] != "admin":
         raise HTTPException(status_code=403, detail="অনুমতি নেই!")
-    
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, username, amount, method, transaction_id, created_at FROM recharges WHERE status='PENDING'")
@@ -361,20 +401,139 @@ def approve_recharge(id: int, authorization: Optional[str] = Header(None)):
     c.execute("UPDATE recharges SET status='COMPLETED' WHERE id=?", (id,))
     conn.commit()
     conn.close()
-    return {"message": "রিচার্জ সফলভাবে অ্যাপ্রুভ হয়েছে এবং ব্যালেন্স যোগ হয়েছে!"}
+    return {"message": f"রিচার্জ সফলভাবে অ্যাপ্রুভ হয়েছে এবং {amount} ৳ ব্যালেন্স যোগ হয়েছে!"}
 
-@app.get("/api/admin/users")
-def get_all_users(authorization: Optional[str] = Header(None)):
+@app.post("/api/admin/reject/{id}")
+def reject_recharge(id: int, authorization: Optional[str] = Header(None)):
     user = get_user_from_token(authorization)
     if not user or user["role"] != "admin":
         raise HTTPException(status_code=403, detail="অনুমতি নেই!")
-    
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, uid, username, email, mobile, district, upazila, balance, role, is_active, created_at FROM users")
+    c.execute("UPDATE recharges SET status='REJECTED' WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+    return {"message": "রিচার্জ রিকোয়েস্ট বাতিল করা হয়েছে!"}
+
+@app.get("/api/admin/users")
+def get_all_users(search: Optional[str] = None, authorization: Optional[str] = Header(None)):
+    user = get_user_from_token(authorization)
+    if not user or user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    query = "SELECT id, uid, username, email, mobile, district, upazila, balance, role, is_active, created_at FROM users"
+    params = []
+    if search:
+        query += " WHERE uid LIKE ? OR username LIKE ? OR mobile LIKE ?"
+        s_term = f"%{search}%"
+        params = [s_term, s_term, s_term]
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     return [{
         "id": r[0], "uid": r[1], "username": r[2], "email": r[3], "mobile": r[4],
         "district": r[5], "upazila": r[6], "balance": r[7], "role": r[8], "is_active": bool(r[9]), "created_at": r[10]
     } for r in rows]
+
+# অ্যাডমিন কর্তৃক ইউজারের ব্যালেন্স যোগ/পরিবর্তন API
+@app.post("/api/admin/users/{user_id}/add-balance")
+def admin_add_balance(user_id: int, data: BalanceUpdateModel, authorization: Optional[str] = Header(None)):
+    admin = get_user_from_token(authorization)
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অ্যাডমিন অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET balance = balance + ? WHERE id=?", (data.amount, user_id))
+    conn.commit()
+    conn.close()
+    return {"message": f"ইউজারের অ্যাকাউন্টে {data.amount} ৳ সফলভাবে যোগ করা হয়েছে!"}
+
+# অ্যাডমিন কর্তৃক ইউজার এডিট API
+@app.put("/api/admin/users/{user_id}")
+def admin_edit_user(user_id: int, data: EditUserModel, authorization: Optional[str] = Header(None)):
+    admin = get_user_from_token(authorization)
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    if data.password:
+        p_hash = hashlib.sha256(data.password.encode()).hexdigest()
+        c.execute("UPDATE users SET password_hash=? WHERE id=?", (p_hash, user_id))
+
+    if data.balance is not None:
+        c.execute("UPDATE users SET balance=? WHERE id=?", (data.balance, user_id))
+
+    c.execute('''
+        UPDATE users SET username=?, email=?, role=?, is_active=? WHERE id=?
+    ''', (data.username, data.email, data.role, 1 if data.is_active else 0, user_id))
+
+    conn.commit()
+    conn.close()
+    return {"message": "ইউজারের তথ্য সফলভাবে আপডেট হয়েছে!"}
+
+# অ্যাডমিন কর্তৃক ইউজার ডিলিট API
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: int, authorization: Optional[str] = Header(None)):
+    admin = get_user_from_token(authorization)
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "ইউজার অ্যাকাউন্ট সফলভাবে ডিলিট করা হয়েছে!"}
+
+# অ্যাডমিন সার্চ লগ API
+@app.get("/api/admin/search-logs")
+def get_admin_search_logs(authorization: Optional[str] = Header(None)):
+    admin = get_user_from_token(authorization)
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        SELECT username, district, upazila, fee_charged, balance_before, balance_after, created_at
+        FROM search_logs ORDER BY id DESC LIMIT 50
+    ''')
+    rows = c.fetchall()
+    conn.close()
+    return [{
+        "username": r[0], "district": r[1], "upazila": r[2], "fee_charged": r[3],
+        "balance_before": r[4], "balance_after": r[5], "created_at": r[6]
+    } for r in rows]
+
+# অ্যাডমিন CSV এক্সপোর্ট API (ইউজার ডেটা ডাউনলোড)
+@app.get("/api/admin/export/users-csv")
+def export_users_csv(authorization: Optional[str] = Header(None)):
+    admin = get_user_from_token(authorization)
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="অনুমতি নেই!")
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, uid, username, email, mobile, district, upazila, balance, role, created_at FROM users")
+    rows = c.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "UID", "Username", "Email", "Mobile", "District", "Upazila", "Balance", "Role", "Created At"])
+    for r in rows:
+        writer.writerow(r)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users_report.csv"}
+    )
